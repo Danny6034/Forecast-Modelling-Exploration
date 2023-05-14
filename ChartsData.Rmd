@@ -1,0 +1,183 @@
+---
+title: "Final Project: Spotify Charts Data"
+output: html_notebook
+---
+
+This Notebook will detail the exploration of the biggest artists of the Spotify Charts.
+My plan is to understand the trends in artists and tracks, and how they change along years and seasons. 
+Then, I will attempt to model these movements over the next years, as well as infer conclusions from the observation of trends,
+as detailed in the book Forecasting: Principles and Practices.
+
+First, I will read the csv file with the Charts data:
+
+```{r}
+readfile <- read.csv("charts.csv")
+
+head(readfile)
+```
+
+As shown by the head() function, this dataframe contains the name of the song, data of placement, artist, rank, number of streams, and chart region.
+
+I will focus on data from US charts:
+```{r}
+library(tidyverse)
+
+readfile |> distinct(region)
+```
+
+
+
+```{r}
+us_charts <- readfile |> filter(region=='United States' & chart=='top200')
+
+us_charts
+```
+
+To properly analyze this data and its trends, I will need a few packages:
+```{r}
+library(ggplot2)
+library(forecast)
+```
+
+Basic Plots for Initial Analysis:
+
+--Artists with most placements:
+```{r}
+artist_count <- us_charts |> count(artist) |>arrange(desc(n))
+artist_count
+```
+
+Histogram of placements:
+```{r}
+ggplot(us_charts, aes(x = rank)) + 
+  geom_histogram(binwidth = 30) +
+  theme_dark()
+```
+
+Create new Table with only the top 10 most placed artists:
+```{r}
+us_chart_top10 <- us_charts |> filter(artist=="Juice WRLD" | artist=="Post Malone" | artist=="XXXTENTACION" | artist=="Drake" | artist=="Billie Eilish" | artist=="Lil Uzi Vert" | artist=="Travis Scott" | artist=="Ariana Grande" | artist=="Khalid" | artist=="J. Cole")
+
+ggplot(us_chart_top10, aes(x = artist)) + 
+  geom_bar(aes(fill=artist)) +
+  coord_flip() +
+  theme_dark()
+```
+
+I will now analyse placements for individual artists, and try to obtain trends from the graphs.
+```{r}
+travis_scott <- us_charts |> filter(artist == 'Travis Scott')
+```
+
+
+
+Now, I want to get a sense of how these artists placed over time.
+For that, I will plot their ranks/time in the charts:
+```{r}
+ggplot(travis_scott, aes(x=date, y = rank)) + 
+  geom_line(aes(color=artist)) +
+    scale_y_reverse()
+
+```
+
+As shown in the image above, the original dataset has way too many datapoints for any appropriate analysis to be made.
+
+I will separate the dataset into training data and test data:
+
+```{r}
+
+
+
+travis_scott$date <- as.Date(travis_scott$date, format= "%Y-%m-%d")
+
+
+
+#Extract the first three years of data:
+travis_scott_training_data <- filter(travis_scott, between(date, as.Date("2017-01-01"), as.Date("2020-01-01")))
+
+travis_scott_training_data
+```
+
+
+```{r}
+ggplot(travis_scott_training_data, aes(x=date, y = rank)) + 
+  geom_line(aes(color=artist)) +
+      geom_smooth(method = "gam") +
+    scale_y_reverse() +
+  theme_dark()
+```
+
+
+Within the book Forecasting: Principles and Practices, I learned many different forecasting methods for time series. In this case, I wanted to experiment if I was going to be able to correctly predict the movements of an artist in the top200 chart.
+
+Trends:
+
+Between these two years, the data has seemed pretty stable. There has been a slight increase in placements between january of 2017 and january of 2020, which might indicate an increse in popularity of the artist.
+
+
+Seasonal:
+
+I extract one year to see if there is a pattern throughout the seasons.
+```{r}
+travis_scott_training_data_s <- filter(travis_scott, between(date, as.Date("2020-01-01"), as.Date("2021-01-01")))
+
+travis_scott_training_data_s
+```
+
+```{r}
+ggplot(travis_scott_training_data_s, aes(x=date, y = rank)) + 
+  geom_line(aes(color=artist)) +
+    geom_smooth(method = "gam") +
+    scale_y_reverse() +
+  theme_dark()
+```
+The consumption of the artist Travis Scott seems to increase slightly between the months of May and September. This could possible be explained by the summer season, which has the highest rating of music festivals across the country.
+
+
+Now I will need the 'forecast' package to start making predictions about the data. I will use the training data to attempt to reach a graph that is close to the test data date range.
+```{r}
+library(forecast)
+
+travis_scott_test_data <- filter(travis_scott, between(date, as.Date("2020-01-02"), as.Date("2021-12-30")))
+
+travis_scott_test_data
+
+travis_scott_ts <- travis_scott_training_data |> select(rank)
+
+travis_scott_ts <- ts(travis_scott_ts)
+
+travis_scott_test_ts <-ts(travis_scott_test_data |> select(rank))
+
+
+```
+
+Plot data with layer of moving averages:
+```{r}
+
+ggplot(travis_scott_training_data, aes(x=date, y = rank)) + 
+  geom_line(aes(color=artist)) +
+    geom_smooth(method="loess") +
+    scale_y_reverse() +
+  theme_dark()
+```
+
+Predictor with Simple Exponential Smoothing:
+```{r}
+es <- ses(travis_scott_ts, h=365)
+
+round(accuracy(es),2)
+```
+Plot model:
+```{r}
+autoplot(es) +
+  autolayer(fitted(es), series="Fitted") 
+```
+
+Forecast with Exponential Smoothing:
+```{r}
+
+es %>% forecast(es, h=365) %>%
+  autoplot() 
+```
+
+
